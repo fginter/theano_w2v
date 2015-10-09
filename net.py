@@ -1,11 +1,13 @@
+import sys
 import theano
+import numpy
 import theano.tensor as T
 
 class VSpaceLayer(object):
 
     """A layer which has a vector of numerical indices on its input
     and the corresponding matrix rows on the output. This is to be
-    used as a minibatch."""
+    used as a minibatch. The matrix are the embeddings."""
 
     @classmethod
     def from_matrix(cls,matrix,input):
@@ -19,7 +21,7 @@ class VSpaceLayer(object):
             name='M',
             borrow=True #don't make own copy
         )
-        self.output=theano.sparse_grad(self.wordvecs[self.input])
+        self.output=self.wordvecs[self.input]
         self.params=[self.wordvecs] #The word vectors should be trained, so they're a parameter
 
 
@@ -85,7 +87,7 @@ class SoftMaxLayer(object):
         # plain-k
 
         self.input=input
-        self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
+        self.p_y_given_x = T.dot(input, self.W) + self.b#T.nnet.softmax(T.dot(input, self.W) + self.b)
         # symbolic description of how to compute prediction as class whose
         # probability is maximal
         self.y_pred = T.argmax(self.p_y_given_x, axis=1)
@@ -134,15 +136,20 @@ class SkipGram(object):
     """
     
     @classmethod
-    def empty(cls,vocabulary,dimensionality):
+    def empty(cls,inp_vocabulary,outp_vocabulary,dimensionality):
 
         input=T.ivector('inp') #Symbolic variable for my input
         #Array to store the embeddings
-        vspace_matrix=numpy.array((len(vocabulary),dimensionality),dtype=theano.config.floatX) #Creates a numpy array, not theano variable
+        rng = numpy.random.RandomState(5678)
+        vspace_matrix = numpy.asarray(rng.uniform(low=-0.01,high=0.01,size=(len(inp_vocabulary.vocab),dimensionality)),
+                dtype=theano.config.floatX
+            )
+
+        #vspace_matrix=numpy.asarray(zeros((len(vocabulary.vocab),dimensionality),dtype=theano.config.floatX) #Creates a numpy array, not theano variable
         #..and a vspace layer with those
-        vspace_layer=VSpaceLayer.from_matrix(self.vspace_matrix,self.input)
+        vspace_layer=VSpaceLayer.from_matrix(vspace_matrix,input)
         #...now a softmax layer
-        softmax_layer=SoftMaxLayer.empty(n_in=dimensionality,classes=vocabulary,input=vspace_layer.output,rng=None)
+        softmax_layer=SoftMaxLayer.empty(n_in=dimensionality,classes=outp_vocabulary.vocab,input=vspace_layer.output,rng=None)
         
         return cls(vspace_layer,softmax_layer)
         
@@ -151,6 +158,10 @@ class SkipGram(object):
         self.vspace_layer=vspace_layer
         self.softmax_layer=softmax_layer
         self.input=self.vspace_layer.input
+        self.params=self.vspace_layer.params #softmax layer(s) are dealt with separately
+        self.train=self.compile_train_function(self.softmax_layer) #Call .train(X,Y,l_rate)
+        self.outputf=self.compile_output_function(self.softmax_layer) #Call .output(X)
+
 
     def compile_train_function(self,softmax_layer):
         """Builds the function self.train_classification(x,y,l_rate) which returns the cost. softmax_layer should be one
@@ -162,11 +173,14 @@ class SkipGram(object):
 
         neg_likelihood=softmax_layer.negative_log_likelihood(y) #The output to optimize
         classification_cost=neg_likelihood ###Maybe add some form of regularization...?
-        gparams = [T.grad(classification_cost, param) for param in self.params+softmax_layer.params] #Gradient w.r.t. every parameter
+
+        params=self.params+softmax_layer.params
+
+        gparams = [T.grad(classification_cost, param) for param in params] #Gradient w.r.t. every parameter
 
         updates = [
             (param, param - l_rate * gparam)
-            for param, gparam in zip(self.params+softmax_layer.params, gparams)
+            for param, gparam in zip(params, gparams)
             ]
 
         # compiling a Theano function `train_model` that returns the cost, but
@@ -176,6 +190,22 @@ class SkipGram(object):
             inputs=[x,y,l_rate],
             outputs=classification_cost,
             updates=updates,
+            givens={
+                self.vspace_layer.input: x
+                }
+            )
+
+    def compile_output_function(self,softmax_layer):
+        """Builds the function self.train_classification(x,y,l_rate) which returns the cost. softmax_layer should be one
+        of the softmax_layers in the model (there's only one right now, but could be more)"""
+
+        x = T.ivector('x')  # minibatch, input  --- individual focus words
+        # compiling a Theano function `train_model` that returns the cost, but
+        # at the same time updates the parameter of the model based on the rules
+        # defined in `updates`
+        return theano.function(
+            inputs=[x],
+            outputs=softmax_layer.p_y_given_x,
             givens={
                 self.vspace_layer.input: x
                 }

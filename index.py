@@ -31,7 +31,7 @@ class Vocab(object):
     @staticmethod
     def cut_vocab(vocab,max_rank):
         top_n=sorted(vocab.iteritems(),key=lambda (w,c): c,reverse=True)[:max_rank] #top_n keys, sorted
-        items=((w,idx) for idx,w in enumerate(top_n))
+        items=((w,idx) for idx,(w,count) in enumerate(top_n))
         return dict(items) #Dictionary with top_n words, and their indices
 
     def save(self,f_name):
@@ -39,10 +39,13 @@ class Vocab(object):
             pickle.dump(self.vocab,f,protocol=pickle.HIGHEST_PROTOCOL)
 
     @classmethod
-    def load(cls,f_name):
+    def load(cls,f_name,max_rank=0):
         with open(f_name,"rb") as f:
             vocab=pickle.load(f)
-        return cls(vocab)
+        if max_rank>0 and max_rank<len(vocab):
+            return cls(dict(((w,i) for (w,i) in vocab.iteritems() if i<max_rank)))
+        else:
+            return cls(vocab)
 
     @classmethod
     def from_conllu(cls,src,args):
