@@ -87,7 +87,7 @@ class SoftMaxLayer(object):
         # plain-k
 
         self.input=input
-        self.p_y_given_x = T.dot(input, self.W) + self.b#T.nnet.softmax(T.dot(input, self.W) + self.b)
+        self.p_y_given_x = T.nnet.softmax(T.dot(input, self.W) + self.b)
         # symbolic description of how to compute prediction as class whose
         # probability is maximal
         self.y_pred = T.argmax(self.p_y_given_x, axis=1)

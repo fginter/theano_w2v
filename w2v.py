@@ -84,7 +84,8 @@ def train_w2v(args):
     sg=net.SkipGram.empty(inp_vocab,outp_vocab,100)
 
     for _ in minibatches(sys.stdin,inp_vocab,outp_vocab,minibatch_focus,minibatch_context,win_max_len):
-        sg.outputf(minibatch_focus)#train(minibatch_focus,minibatch_context,0.001)
+        sg.train(minibatch_focus,minibatch_context,0.001)
+        #sg.outputf(minibatch_focus)
         #print time.ctime()
         #print minibatch_focus
         
